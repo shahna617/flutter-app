@@ -1,0 +1,18 @@
+*.pyc
+__pycache__/
+*.pyo
+*.pyd
+.env.*
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+!.env.example
+.env.local
+# Django
+db.sqlite3
+media/
+
+.env.local
