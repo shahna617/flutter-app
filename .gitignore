@@ -1,18 +1,29 @@
-*.pyc
-__pycache__/
-*.pyo
-*.pyd
-.env.*
+# Flutter/Dart
+.dart_tool/
+.packages
+build/
+.pub-cache/
+.pub/
+
 # Environments
 .env
-.venv
-env/
-venv/
-ENV/
-!.env.example
-.env.local
-# Django
-db.sqlite3
-media/
+
+# iOS/Android
+ios/Flutter/Generated.xcconfig
+ios/Flutter/flutter_export_environment.sh
+ios/Flutter/App.framework
+ios/Flutter/Flutter.framework
+ios/Flutter/Flutter.podspec
+
+# Android
+**/*.keystore
+android/key.properties
+
+# Secrets and local config
 
 .env.local
+
+# IDE and machine-specific files
+.idea/
+*.iml
+.flutter-plugins-dependencies
