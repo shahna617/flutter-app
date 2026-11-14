@@ -2,9 +2,17 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-import '../../core/auth/auth_service.dart';
-import '../../core/session/session_provider.dart';
+import '../core/auth/auth_service.dart';
+import '../core/session/session_provider.dart';
+import '../core/theme/app_colors.dart';
+import '../core/theme/app_spacing.dart';
+import '../core/theme/app_text_styles.dart';
+import '../core/widgets/app_scaffold.dart';
+import '../core/widgets/app_text_field.dart';
+import '../core/widgets/glass_card.dart';
+import '../core/widgets/primary_button.dart';
 
+/// Login screen. Follows DESIGN.md: shared scaffold, glass card, theme tokens only.
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
 
@@ -16,6 +24,7 @@ class _LoginScreenState extends State<LoginScreen> {
   final _usernameController = TextEditingController();
   final _passwordController = TextEditingController();
   bool _loading = false;
+  bool _waking = false;
   String? _error;
 
   @override
@@ -35,6 +44,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
     setState(() {
       _loading = true;
+      _waking = true;
       _error = null;
     });
 
@@ -46,7 +56,12 @@ class _LoginScreenState extends State<LoginScreen> {
       if (!mounted) return;
       setState(() => _error = e.message);
     } finally {
-      if (mounted) setState(() => _loading = false);
+      if (mounted) {
+        setState(() {
+          _loading = false;
+          _waking = false;
+        });
+      }
     }
   }
 
@@ -54,85 +69,83 @@ class _LoginScreenState extends State<LoginScreen> {
   Widget build(BuildContext context) {
     final session = context.read<SessionProvider>();
 
-    return Scaffold(
-      body: SafeArea(
-        child: Center(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.all(24),
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 400),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
+    return AppScaffold(
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const SizedBox(height: AppSpacing.s24),
+          Text('Guardly', style: AppTextStyles.greeting),
+          const SizedBox(height: AppSpacing.s4),
+          Text('Log in to continue', style: AppTextStyles.bodyMuted),
+          const SizedBox(height: AppSpacing.s24),
+          GlassCard(
+            padding: const EdgeInsets.all(AppSpacing.s20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                AppTextField(
+                  label: 'Username',
+                  controller: _usernameController,
+                  enabled: !_loading,
+                  autocorrect: false,
+                  textInputAction: TextInputAction.next,
+                ),
+                const SizedBox(height: AppSpacing.s16),
+                AppTextField(
+                  label: 'Password',
+                  controller: _passwordController,
+                  enabled: !_loading,
+                  obscureText: true,
+                  onSubmitted: (_) => _submit(),
+                ),
+                const SizedBox(height: AppSpacing.s20),
+                PrimaryButton(
+                  label: 'Log in',
+                  onPressed: _submit,
+                  loading: _loading,
+                ),
+                if (_waking && _error == null) ...[
+                  const SizedBox(height: AppSpacing.s12),
                   Text(
-                    'Guardly',
-                    textAlign: TextAlign.center,
-                    style: Theme.of(context).textTheme.headlineMedium,
+                    'Waking up the server, this can take up to a minute.',
+                    style: AppTextStyles.bodyMuted,
                   ),
-                  const SizedBox(height: 32),
-                  TextField(
-                    controller: _usernameController,
-                    enabled: !_loading,
-                    textInputAction: TextInputAction.next,
-                    autocorrect: false,
-                    decoration: const InputDecoration(
-                      labelText: 'Username',
-                      border: OutlineInputBorder(),
+                ] else if (_error != null) ...[
+                  const SizedBox(height: AppSpacing.s12),
+                  Text(
+                    _error!,
+                    style: AppTextStyles.body.copyWith(
+                      color: AppColors.danger,
                     ),
                   ),
-                  const SizedBox(height: 16),
-                  TextField(
-                    controller: _passwordController,
-                    enabled: !_loading,
-                    obscureText: true,
-                    onSubmitted: (_) => _submit(),
-                    decoration: const InputDecoration(
-                      labelText: 'Password',
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
-                  if (_error != null) ...[
-                    const SizedBox(height: 12),
-                    Text(
-                      _error!,
-                      style: TextStyle(
-                        color: Theme.of(context).colorScheme.error,
-                      ),
-                    ),
-                  ],
-                  const SizedBox(height: 24),
-                  FilledButton(
-                    onPressed: _loading ? null : _submit,
-                    child: _loading
-                        ? const SizedBox(
-                      height: 20,
-                      width: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                        : const Text('Log in'),
-                  ),
-                  if (kDebugMode) ...[
-                    const SizedBox(height: 32),
-                    const Divider(),
-                    const Text(
-                      'Debug only',
-                      textAlign: TextAlign.center,
-                    ),
-                    TextButton(
-                      onPressed: () => session.setRole(UserRole.student),
-                      child: const Text('Dev: enter as Student'),
-                    ),
-                    TextButton(
-                      onPressed: () => session.setRole(UserRole.admin),
-                      child: const Text('Dev: enter as Admin'),
-                    ),
-                  ],
                 ],
-              ),
+              ],
             ),
           ),
-        ),
+          if (kDebugMode) ...[
+            const SizedBox(height: AppSpacing.s24),
+            Text(
+              'Debug only',
+              textAlign: TextAlign.center,
+              style: AppTextStyles.meta,
+            ),
+            const SizedBox(height: AppSpacing.s8),
+            TextButton(
+              onPressed: () => session.setRole(UserRole.student),
+              child: Text(
+                'Dev: enter as Student',
+                style: AppTextStyles.chip,
+              ),
+            ),
+            TextButton(
+              onPressed: () => session.setRole(UserRole.admin),
+              child: Text(
+                'Dev: enter as Admin',
+                style: AppTextStyles.chip,
+              ),
+            ),
+          ],
+        ],
       ),
     );
   }

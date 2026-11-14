@@ -57,7 +57,7 @@ class AuthService {
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({'username': username, 'password': password}),
       )
-          .timeout(const Duration(seconds: 15));
+          .timeout(const Duration(seconds: 60));
     } on TimeoutException {
       throw const AuthException('The server took too long to respond.');
     } catch (_) {
