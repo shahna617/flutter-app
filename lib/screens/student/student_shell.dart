@@ -8,6 +8,7 @@ import '../../core/widgets/app_bottom_nav.dart';
 import '../../core/widgets/app_header.dart';
 import '../../core/widgets/app_scaffold.dart';
 import '../../core/widgets/glass_card.dart';
+import 'submit_report_screen.dart';
 
 /// Student navigation shell holding the fixed bottom navigation bar and tabs.
 class StudentShell extends StatefulWidget {
@@ -55,7 +56,7 @@ class _StudentShellState extends State<StudentShell> {
         index: _currentIndex,
         children: const [
           _StudentHomeTab(),
-          _StudentSubmitTab(),
+          SubmitReportScreen(),
           _StudentMyReportsTab(),
         ],
       ),
@@ -95,37 +96,6 @@ class _StudentHomeTab extends StatelessWidget {
   }
 }
 
-class _StudentSubmitTab extends StatelessWidget {
-  const _StudentSubmitTab();
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        GlassCard(
-          padding: const EdgeInsets.all(AppSpacing.cardPadding),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Submit',
-                style: AppTextStyles.cardTitle,
-              ),
-              const SizedBox(height: AppSpacing.s8),
-              Text(
-                'Student report submission form placeholder.',
-                style: AppTextStyles.bodyMuted,
-              ),
-              const SizedBox(height: AppSpacing.s16),
-              _TemporaryLogoutButton(),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-}
 
 class _StudentMyReportsTab extends StatelessWidget {
   const _StudentMyReportsTab();
