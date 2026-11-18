@@ -73,7 +73,11 @@ class AuthService {
 
     final data = jsonDecode(response.body) as Map<String, dynamic>;
     final token = data['token'] as String?;
-    final role = _parseRole(data['role'] as String?);
+    final roleName = data['role'] as String?;
+    if (roleName == 'management') {
+      throw const AuthException("This account can't use the mobile app.");
+    }
+    final role = _parseRole(roleName);
     if (token == null || role == null) {
       throw const AuthException('Unexpected response from the server.');
     }
