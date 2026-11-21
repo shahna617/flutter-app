@@ -8,6 +8,7 @@ import '../../core/widgets/app_bottom_nav.dart';
 import '../../core/widgets/app_header.dart';
 import '../../core/widgets/app_scaffold.dart';
 import '../../core/widgets/glass_card.dart';
+import 'my_reports_screen.dart';
 import 'submit_report_screen.dart';
 
 /// Student navigation shell holding the fixed bottom navigation bar and tabs.
@@ -54,10 +55,13 @@ class _StudentShellState extends State<StudentShell> {
       ),
       body: IndexedStack(
         index: _currentIndex,
-        children: const [
-          _StudentHomeTab(),
-          SubmitReportScreen(),
-          _StudentMyReportsTab(),
+        children: [
+          const _StudentHomeTab(),
+          const SubmitReportScreen(),
+          MyReportsScreen(
+            isActive: _currentIndex == 2,
+            onSubmitNew: () => setState(() => _currentIndex = 1),
+          ),
         ],
       ),
     );
@@ -84,39 +88,6 @@ class _StudentHomeTab extends StatelessWidget {
               const SizedBox(height: AppSpacing.s8),
               Text(
                 'Student home tab placeholder. Real screen content will be placed here by team members.',
-                style: AppTextStyles.bodyMuted,
-              ),
-              const SizedBox(height: AppSpacing.s16),
-              _TemporaryLogoutButton(),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-
-class _StudentMyReportsTab extends StatelessWidget {
-  const _StudentMyReportsTab();
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        GlassCard(
-          padding: const EdgeInsets.all(AppSpacing.cardPadding),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'My reports',
-                style: AppTextStyles.cardTitle,
-              ),
-              const SizedBox(height: AppSpacing.s8),
-              Text(
-                'Student reports list placeholder.',
                 style: AppTextStyles.bodyMuted,
               ),
               const SizedBox(height: AppSpacing.s16),
