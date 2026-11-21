@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:http/http.dart' as http;
+import 'package:http_parser/http_parser.dart';
 
 import '../core/auth/auth_service.dart';
 
@@ -165,6 +166,29 @@ class IncidentService {
     required String token,
     required String filePath,
   }) async {
+    // Work out the extension from filePath (lowercase, text after the last dot).
+    final lastDot = filePath.lastIndexOf('.');
+    final extension = lastDot != -1
+        ? filePath.substring(lastDot + 1).toLowerCase()
+        : '';
+
+    // Map allowed extensions to their respective MIME types.
+    const mimeTypes = <String, String>{
+      'jpg': 'image/jpeg',
+      'jpeg': 'image/jpeg',
+      'png': 'image/png',
+      'webp': 'image/webp',
+      'mp4': 'video/mp4',
+      'mov': 'video/quicktime',
+    };
+
+    final mimeType = mimeTypes[extension];
+    if (mimeType == null) {
+      throw const IncidentException(
+        'Only photos (JPEG, PNG, WebP) and videos (MP4, MOV) are allowed.',
+      );
+    }
+
     // Check that the file exists before attempting to upload.
     final file = File(filePath);
     if (!await file.exists()) {
@@ -182,10 +206,14 @@ class IncidentService {
       throw const IncidentException('File is too large (50 MB maximum).');
     }
 
-    // Create the multipart file entry from the file path.
+    // Create the multipart file entry with the mapped content type.
     final http.MultipartFile multipartFile;
     try {
-      multipartFile = await http.MultipartFile.fromPath('file', filePath);
+      multipartFile = await http.MultipartFile.fromPath(
+        'file',
+        filePath,
+        contentType: MediaType.parse(mimeType),
+      );
     } catch (_) {
       throw const IncidentException('Could not read the selected file.');
     }
