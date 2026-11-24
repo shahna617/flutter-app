@@ -1,4 +1,7 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/constants/report_options.dart';
@@ -8,9 +11,11 @@ import '../../core/theme/app_spacing.dart';
 import '../../core/theme/app_text_styles.dart';
 import '../../core/widgets/app_dropdown_field.dart';
 import '../../core/widgets/app_text_field.dart';
+import '../../core/widgets/attachment_field.dart';
 import '../../core/widgets/glass_card.dart';
 import '../../core/widgets/primary_button.dart';
 import '../../services/incident_service.dart';
+import '../../services/permissions_service.dart';
 
 /// Screen for students to submit an incident report.
 /// Follows DESIGN.md: glass card form, shared theme tokens and widgets only.
@@ -18,9 +23,15 @@ class SubmitReportScreen extends StatefulWidget {
   const SubmitReportScreen({
     super.key,
     IncidentService? incidentService,
-  }) : _incidentService = incidentService;
+    PermissionsService? permissionsService,
+    ImagePicker? imagePicker,
+  })  : _incidentService = incidentService,
+        _permissionsService = permissionsService,
+        _imagePicker = imagePicker;
 
   final IncidentService? _incidentService;
+  final PermissionsService? _permissionsService;
+  final ImagePicker? _imagePicker;
 
   @override
   State<SubmitReportScreen> createState() => _SubmitReportScreenState();
@@ -28,24 +39,173 @@ class SubmitReportScreen extends StatefulWidget {
 
 class _SubmitReportScreenState extends State<SubmitReportScreen> {
   late final IncidentService _incidentService;
+  late final PermissionsService _permissionsService;
+  late final ImagePicker _imagePicker;
   final _descriptionController = TextEditingController();
 
   String? _selectedCategory;
   String? _selectedLocation;
   bool _isAnonymous = false;
   bool _loading = false;
+  bool _uploading = false;
   String? _errorMessage;
+  bool _permissionPermanentlyDenied = false;
+
+  String? _attachmentPath;
+  bool _attachmentIsVideo = false;
+  String? _uploadedUrl;
 
   @override
   void initState() {
     super.initState();
     _incidentService = widget._incidentService ?? IncidentService();
+    _permissionsService = widget._permissionsService ?? PermissionsService();
+    _imagePicker = widget._imagePicker ?? ImagePicker();
   }
 
   @override
   void dispose() {
     _descriptionController.dispose();
     super.dispose();
+  }
+
+  /// Opens camera or gallery based on the chosen [source] and validates the selection.
+  Future<void> _handlePickAttachment(AttachmentSource source) async {
+    FocusScope.of(context).unfocus();
+
+    // Camera sources require camera permission before opening
+    if (source == AttachmentSource.cameraPhoto ||
+        source == AttachmentSource.cameraVideo) {
+      final permission = await _permissionsService.requestCamera();
+      if (!mounted) return;
+
+      if (permission == AppPermissionResult.denied) {
+        setState(() {
+          _errorMessage = 'Camera permission is needed to use the camera.';
+          _permissionPermanentlyDenied = false;
+        });
+        return;
+      } else if (permission == AppPermissionResult.permanentlyDenied) {
+        setState(() {
+          _errorMessage = 'Camera permission is needed to use the camera.';
+          _permissionPermanentlyDenied = true;
+        });
+        return;
+      }
+    }
+
+    final XFile? pickedFile;
+    try {
+      switch (source) {
+        case AttachmentSource.cameraPhoto:
+          pickedFile = await _imagePicker.pickImage(
+            source: ImageSource.camera,
+            maxWidth: 1600,
+            maxHeight: 1600,
+            imageQuality: 80,
+          );
+          break;
+        case AttachmentSource.galleryPhoto:
+          pickedFile = await _imagePicker.pickImage(
+            source: ImageSource.gallery,
+            maxWidth: 1600,
+            maxHeight: 1600,
+            imageQuality: 80,
+          );
+          break;
+        case AttachmentSource.cameraVideo:
+          pickedFile = await _imagePicker.pickVideo(
+            source: ImageSource.camera,
+            maxDuration: const Duration(minutes: 1),
+          );
+          break;
+        case AttachmentSource.galleryVideo:
+          pickedFile = await _imagePicker.pickVideo(
+            source: ImageSource.gallery,
+            maxDuration: const Duration(minutes: 1),
+          );
+          break;
+      }
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _errorMessage = 'Could not open the camera or gallery.';
+        _permissionPermanentlyDenied = false;
+      });
+      return;
+    }
+
+    if (!mounted) return;
+
+    // If the user cancelled the picker, do nothing
+    if (pickedFile == null) {
+      return;
+    }
+
+    final path = pickedFile.path;
+
+    // Validate file extension (case-insensitive)
+    final lastDot = path.lastIndexOf('.');
+    final extension =
+        lastDot != -1 ? path.substring(lastDot).toLowerCase() : '';
+    const allowedExtensions = {
+      '.jpg',
+      '.jpeg',
+      '.png',
+      '.webp',
+      '.mp4',
+      '.mov',
+    };
+    if (!allowedExtensions.contains(extension)) {
+      setState(() {
+        _errorMessage =
+            'Only photos (JPEG, PNG, WebP) and videos (MP4, MOV) are allowed.';
+        _permissionPermanentlyDenied = false;
+      });
+      return;
+    }
+
+    // Validate file size (at most 50 MB)
+    final file = File(path);
+    final int fileSize;
+    try {
+      fileSize = await file.length();
+    } catch (_) {
+      setState(() {
+        _errorMessage = 'Could not read the selected file.';
+        _permissionPermanentlyDenied = false;
+      });
+      return;
+    }
+
+    if (fileSize > 50 * 1024 * 1024) {
+      setState(() {
+        _errorMessage = 'File is too large (50 MB maximum).';
+        _permissionPermanentlyDenied = false;
+      });
+      return;
+    }
+
+    final isVideo = extension == '.mp4' || extension == '.mov';
+
+    setState(() {
+      _attachmentPath = path;
+      _attachmentIsVideo = isVideo;
+      _uploadedUrl = null; // Clear remembered URL when attachment changes
+      _errorMessage = null;
+      _permissionPermanentlyDenied = false;
+    });
+  }
+
+  /// Removes the current attachment and clears the remembered upload URL.
+  void _removeAttachment() {
+    setState(() {
+      _attachmentPath = null;
+      _attachmentIsVideo = false;
+      _uploadedUrl = null;
+      _errorMessage = null;
+      _permissionPermanentlyDenied = false;
+    });
   }
 
   /// Validates inputs and submits the incident report to the backend.
@@ -65,6 +225,7 @@ class _SubmitReportScreenState extends State<SubmitReportScreen> {
         description.isEmpty) {
       setState(() {
         _errorMessage = 'Please fill in all required fields.';
+        _permissionPermanentlyDenied = false;
       });
       return;
     }
@@ -73,6 +234,7 @@ class _SubmitReportScreenState extends State<SubmitReportScreen> {
     if (token == null) {
       setState(() {
         _errorMessage = 'You must be logged in to submit a report.';
+        _permissionPermanentlyDenied = false;
       });
       return;
     }
@@ -80,8 +242,48 @@ class _SubmitReportScreenState extends State<SubmitReportScreen> {
     setState(() {
       _loading = true;
       _errorMessage = null;
+      _permissionPermanentlyDenied = false;
     });
 
+    // If an attachment is selected, upload it first (or reuse remembered URL)
+    String? imageUrl = _uploadedUrl;
+    if (_attachmentPath != null && imageUrl == null) {
+      setState(() {
+        _uploading = true;
+      });
+
+      try {
+        imageUrl = await _incidentService.uploadMedia(
+          token: token,
+          filePath: _attachmentPath!,
+        );
+        if (!mounted) return;
+        _uploadedUrl = imageUrl;
+      } on IncidentException catch (e) {
+        if (!mounted) return;
+        setState(() {
+          _errorMessage = e.message;
+          _loading = false;
+          _uploading = false;
+        });
+        return; // Do NOT create the report if upload fails
+      } catch (_) {
+        if (!mounted) return;
+        setState(() {
+          _errorMessage = 'Cannot reach the server. Please try again.';
+          _loading = false;
+          _uploading = false;
+        });
+        return;
+      }
+    }
+
+    if (!mounted) return;
+    setState(() {
+      _uploading = false;
+    });
+
+    // Submit the incident report
     try {
       await _incidentService.createIncident(
         token: token,
@@ -89,6 +291,7 @@ class _SubmitReportScreenState extends State<SubmitReportScreen> {
         description: description,
         locationText: location,
         isAnonymous: _isAnonymous,
+        imageUrl: imageUrl,
       );
 
       // Check if widget is still mounted after network request
@@ -100,7 +303,11 @@ class _SubmitReportScreenState extends State<SubmitReportScreen> {
         _selectedCategory = null;
         _selectedLocation = null;
         _isAnonymous = false;
+        _attachmentPath = null;
+        _attachmentIsVideo = false;
+        _uploadedUrl = null;
         _errorMessage = null;
+        _permissionPermanentlyDenied = false;
       });
 
       // Show success feedback
@@ -123,6 +330,7 @@ class _SubmitReportScreenState extends State<SubmitReportScreen> {
       if (mounted) {
         setState(() {
           _loading = false;
+          _uploading = false;
         });
       }
     }
@@ -130,6 +338,15 @@ class _SubmitReportScreenState extends State<SubmitReportScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final String submitButtonLabel;
+    if (_uploading) {
+      submitButtonLabel = 'Uploading...';
+    } else if (_loading) {
+      submitButtonLabel = 'Submitting...';
+    } else {
+      submitButtonLabel = 'Submit report';
+    }
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -187,6 +404,17 @@ class _SubmitReportScreenState extends State<SubmitReportScreen> {
               ),
               const SizedBox(height: AppSpacing.s16),
 
+              // Attachment field (photo or video)
+              AttachmentField(
+                label: 'Photo or video (optional)',
+                filePath: _attachmentPath,
+                isVideo: _attachmentIsVideo,
+                enabled: !_loading,
+                onPick: _handlePickAttachment,
+                onRemove: _removeAttachment,
+              ),
+              const SizedBox(height: AppSpacing.s16),
+
               // Anonymous toggle row
               Row(
                 crossAxisAlignment: CrossAxisAlignment.center,
@@ -227,8 +455,8 @@ class _SubmitReportScreenState extends State<SubmitReportScreen> {
 
               // Submit button
               PrimaryButton(
-                label: 'Submit report',
-                onPressed: _submitReport,
+                label: submitButtonLabel,
+                onPressed: _loading ? null : _submitReport,
                 loading: _loading,
               ),
 
@@ -241,6 +469,33 @@ class _SubmitReportScreenState extends State<SubmitReportScreen> {
                     color: AppColors.danger,
                   ),
                 ),
+                if (_permissionPermanentlyDenied) ...[
+                  const SizedBox(height: AppSpacing.s4),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: TextButton(
+                      onPressed: () => _permissionsService.openSettings(),
+                      style: TextButton.styleFrom(
+                        foregroundColor: AppColors.primary,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: AppSpacing.s8,
+                          vertical: AppSpacing.s4,
+                        ),
+                        minimumSize: const Size(
+                          AppSpacing.minTapTarget,
+                          AppSpacing.minTapTarget,
+                        ),
+                      ),
+                      child: Text(
+                        'Open settings',
+                        style: AppTextStyles.meta.copyWith(
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.primary,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
               ],
             ],
           ),

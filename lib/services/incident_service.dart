@@ -1,7 +1,9 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:http/http.dart' as http;
+import 'package:http_parser/http_parser.dart';
 
 import '../core/auth/auth_service.dart';
 
@@ -154,6 +156,136 @@ class IncidentService {
     } catch (_) {
       throw const IncidentException('Server error (unexpected response).');
     }
+  }
+
+  /// Uploads an image or media file for an incident report.
+  ///
+  /// Sends a multipart POST request with the file to the upload endpoint.
+  /// Returns the uploaded file URL string on success (HTTP 201).
+  Future<String> uploadMedia({
+    required String token,
+    required String filePath,
+  }) async {
+    // Work out the extension from filePath (lowercase, text after the last dot).
+    final lastDot = filePath.lastIndexOf('.');
+    final extension = lastDot != -1
+        ? filePath.substring(lastDot + 1).toLowerCase()
+        : '';
+
+    // Map allowed extensions to their respective MIME types.
+    const mimeTypes = <String, String>{
+      'jpg': 'image/jpeg',
+      'jpeg': 'image/jpeg',
+      'png': 'image/png',
+      'webp': 'image/webp',
+      'mp4': 'video/mp4',
+      'mov': 'video/quicktime',
+    };
+
+    final mimeType = mimeTypes[extension];
+    if (mimeType == null) {
+      throw const IncidentException(
+        'Only photos (JPEG, PNG, WebP) and videos (MP4, MOV) are allowed.',
+      );
+    }
+
+    // Check that the file exists before attempting to upload.
+    final file = File(filePath);
+    if (!await file.exists()) {
+      throw const IncidentException('Could not read the selected file.');
+    }
+
+    // Limit file size to a maximum of 50 MB.
+    final int fileSize;
+    try {
+      fileSize = await file.length();
+    } catch (_) {
+      throw const IncidentException('Could not read the selected file.');
+    }
+    if (fileSize > 50 * 1024 * 1024) {
+      throw const IncidentException('File is too large (50 MB maximum).');
+    }
+
+    // Create the multipart file entry with the mapped content type.
+    final http.MultipartFile multipartFile;
+    try {
+      multipartFile = await http.MultipartFile.fromPath(
+        'file',
+        filePath,
+        contentType: MediaType.parse(mimeType),
+      );
+    } catch (_) {
+      throw const IncidentException('Could not read the selected file.');
+    }
+
+    // Prepare and send the multipart request.
+    final http.Response response;
+    try {
+      final request = http.MultipartRequest(
+        'POST',
+        Uri.parse('${AuthService.baseUrl}/api/incidents/upload/'),
+      );
+      request.headers['Authorization'] = 'Token $token';
+      request.files.add(multipartFile);
+
+      // Uploads can be slow, so use a 180-second timeout.
+      final streamedResponse = await _client
+          .send(request)
+          .timeout(const Duration(seconds: 180));
+      response = await http.Response.fromStream(streamedResponse);
+    } on TimeoutException {
+      throw const IncidentException(
+        'The upload took too long. Try a smaller file or a better connection.',
+      );
+    } catch (_) {
+      throw const IncidentException(
+        'Cannot reach the server. Check your internet.',
+      );
+    }
+
+    // HTTP 201 Created indicates successful upload.
+    if (response.statusCode == 201) {
+      try {
+        final data = jsonDecode(response.body);
+        if (data is Map<String, dynamic> && data['url'] is String) {
+          return data['url'] as String;
+        }
+      } catch (_) {
+        // Fall through to throw unexpected response exception.
+      }
+      throw const IncidentException('Server error (unexpected response).');
+    }
+
+    // Handle authentication and permission errors.
+    if (response.statusCode == 401 || response.statusCode == 403) {
+      throw const IncidentException('Your session has expired. Please log in again.');
+    }
+
+    // Handle bad request errors, preferring server's detail message if present.
+    if (response.statusCode == 400) {
+      try {
+        final data = jsonDecode(response.body);
+        if (data is Map<String, dynamic>) {
+          final detail = data['detail'];
+          if (detail is String && detail.isNotEmpty) {
+            throw IncidentException(detail);
+          }
+        }
+      } on IncidentException {
+        rethrow;
+      } catch (_) {
+        // Fall through to the default message.
+      }
+      throw const IncidentException('Please check the file and try again.');
+    }
+
+    // Handle bad gateway error.
+    if (response.statusCode == 502) {
+      throw const IncidentException('Upload failed. Please try again.');
+    }
+
+    // Handle any other unexpected HTTP status codes.
+    throw IncidentException('Server error (${response.statusCode}).');
   }
 
   /// Maps HTTP error status codes to clear, friendly user error messages.
